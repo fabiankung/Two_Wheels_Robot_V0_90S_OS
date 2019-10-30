@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
     void Robot_Balance(void);
-    void Test1(void);
+    void Robot_HighLevelProcess(void);
     void Robot_Sensor_MPU6050(void);
     void Robot_MoveLinear(void);
 

@@ -1,5 +1,5 @@
 // Author			: Fabian Kung
-// Date				: 26 Oct 2019
+// Date				: 29 Oct 2019
 // Filename			: dsPIC33E_BoardSupport.h
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -83,6 +83,7 @@ typedef struct StructSCI
 	unsigned bRXRDY: 	1;	// Set if there is valid byte data in the wired SCI receive buffer.
 	unsigned bRXOVF:	1;	// Set if there is data overflow in wired SCI receive buffer, i.e. old
                             // data has not been read but new data has arrived.
+    unsigned bRESERVED1:    1; // Reserved.
 } SCI_STATUS;
 
 // Type cast for Bit-field structure - I2C interface status.

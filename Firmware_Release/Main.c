@@ -61,14 +61,13 @@ int main(void)
         {
             BlinkLED();
             UART1Driver();
-            I2CDriver();
-            A4988StepperMotorDriver();  
-            Test1();
+            I2CDriver();            
+            A4988StepperMotorDriver(); 
+            Robot_Sensor_MPU6050();            
             Robot_Balance();
             Robot_MoveLinear();
-            
-            Robot_Sensor_MPU6050();
-            gnRunTask = 0;
+            Robot_HighLevelProcess();
+            gnRunTask = 0;                 
         }
     }
     return 0;

@@ -256,7 +256,7 @@ void dsPIC33E_PORInit(int nProcessorClockMHz)
 	// during this event, known as Timer1 overflow.  
 	// Set Timer1 to default state first.
 	T1CON = 0;
-	// Prescaler = 1:1, valid value 0-3 (2 bits).
+	// Pre-scaler = 1:1, valid value 0-3 (2 bits).
 	T1CONbits.TCKPS = 0;    // Clock source from internal oscillator (peripheral clock).
 	// Load Period Register.
 	PR1 = __TIMER1COUNT;	
@@ -301,7 +301,7 @@ void OSExitCritical(void)
 
 // Function name	: BlinkLED
 // Author           : Fabian Kung
-// Last modified	: 28 June 2019
+// Last modified	: 29 Oct 2019
 // Description		: Blink an indicator LED1 to show that the microcontroller is 'alive'.
 #define _LED1_ON_MS	500		// LED1 on period in msec, i.e. 500 msec.
 
@@ -310,7 +310,8 @@ void BlinkLED(void)
     static int  nState = 0;
     static int  nTimer = 1;
     
-    if ((nTimer--) == 0)
+    nTimer--;                                   // Decrement timer.
+    if (nTimer == 0)
     {
         switch (nState)
         {
@@ -362,9 +363,9 @@ BYTE gbytRXbufptr;                             // Receive buffer length pointer.
 ///
 /// Author          : Fabian Kung
 ///
-/// Last modified	: 25 Oct 2019
+/// Last modified	: 29 Oct 2019
 ///
-/// Code version	: 0.99
+/// Code version	: 1.00
 ///
 /// Processor		: dsPIC33EP256GMU8XX family.
 ///                       
@@ -399,8 +400,9 @@ BYTE gbytRXbufptr;                             // Receive buffer length pointer.
 ///			     The flag bRXRDY will be set to indicate to the user modules that valid
 ///			     data is present.
 ///			     Maximum data length is determined by the constant _SCI_RXBUF_LENGTH in
-///			     file "TWSB_header.h".
-///
+///			     file "dsPIC33E_BoardSupport.h".
+///              Indicator LED2 will be lighted up during transmission or reception of
+///              data.
 ///
 /// Example of usage : The codes example below illustrates how to send 2 bytes of character,
 ///			'a' and 'b' via UART1.
@@ -437,9 +439,10 @@ void UART1Driver(void)
 {
     static int  nState = 0;
     static int  nTimer = 1;
-    
-	if ((nTimer--) == 0)
-	{
+
+    nTimer--;                               // Decrement timer.
+	if (nTimer == 0)
+	{                     
 		switch (nState)
 		{
 			case 0: // State 0 - UART1 Initialization.
@@ -501,6 +504,7 @@ void UART1Driver(void)
                                                                     // transmit data length.
                     {
                         PIN_ILED2 = 1;                              // On indicator LED2.
+                        gSCIstatus.bRESERVED1 = 1;                  // Set reserve flag.
                         if (gbytTXbufptr < gbytTXbuflen)
                         {
                             U1TXREG = gbytTXbuffer[gbytTXbufptr];  // Load 1 byte data to UART transmit buffer.
@@ -511,12 +515,28 @@ void UART1Driver(void)
                             gbytTXbufptr = 0;                       // Reset TX buffer pointer.
                             gbytTXbuflen = 0;                       // Reset TX buffer length.
                             gSCIstatus.bTXRDY = 0;                  // Reset transmit flag.
-                            PIN_ILED2 = 0;                          // Off indicator LED2.
+                            //PIN_ILED2 = 0;                          // Off indicator LED2.
                             break;
                         }
                     }
 				}
-
+                                                                    // NOTE: 24 May 2019
+                                                                    // For this chip the TX (and RX) FIFO is 8 bytes deep. Only 
+                                                                    // when all FIFO are transmitted will we clear the indicator
+                                                                    // LED.  In older chips I clear the indicator LED in 
+                                                                    // the if (gSCIstatus.bTXRDY == 1) routine.  I found out
+                                                                    // that the LED does not have sufficient time to light up
+                                                                    // if I do this, it turn off after 2 usec or less, unless 
+                                                                    // we send a stream of data > 8 bytes.  With this 
+                                                                    // approach the indicator LED has at least 1 SysTick cycle
+                                                                    // to lights up, which should be long enough to make the 
+                                                                    // LED visible to our eyes.                
+                if (gSCIstatus.bRESERVED1 == 0)
+                {
+                    PIN_ILED2 = 0;                                  // Off indicator LED2.  
+                }
+                gSCIstatus.bRESERVED1 = 0;                          // Clear reserve flag. 
+                
 				// Check for data to receive via UART.
 				// Note that the receive FIFO buffer is 4-level deep in dsPIC33 and PIC24H micro-controllers.
                 // Here we ignore Framing and Parity error.  If overflow error is detected, the dsPIC33
@@ -600,7 +620,7 @@ BYTE        gbytI2CTXbuf[__MAX_I2C_DATA_BYTE];               // Data to write to
 ///
 /// Author          : Fabian Kung
 ///
-/// Last modified	: 25 Oct 2019
+/// Last modified	: 30 Oct 2019
 ///
 /// Code Version	: 0.95
 ///
@@ -681,7 +701,8 @@ void I2CDriver(void)
     static int nTimeOut = 0;
     static int nCount = 0;
 
-    if ((nTimer--) == 0)
+    nTimer--;                   // Decrement timer.
+    if (nTimer == 0)
     {
         switch (nState)
         {
@@ -1157,7 +1178,8 @@ void A4988StepperMotorDriver(void)
     static int  nLeftOutHigh = 0;
     static int  nRightOutHigh = 0;
     
-    if ((nTimer--) == 0)
+    nTimer--;                   // Decrement timer.
+    if (nTimer == 0)
     {
         switch (nState)
         {
@@ -1249,7 +1271,7 @@ void A4988StepperMotorDriver(void)
                     nState = 1;
                     nTimer = 1;                             
                 }                
-                
+                      
                 // Update distance counters by polling the OC7 and OC8 output pins.  Also compute average
                 // distance and heading.
                 if ((nLeftOutHigh == 0) && (PIN_STEPPER_STEP1 == 1)) // Check for low-to-high transition on left motor output.

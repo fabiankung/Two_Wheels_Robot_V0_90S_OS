@@ -82,7 +82,7 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
 ///
 /// Author          : Fabian Kung
 ///
-/// Last modified	: 25 Oct 2019
+/// Last modified	: 30 Oct 2019
 ///
 /// Code Version	: 0.80
 ///
@@ -150,7 +150,8 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
     static  float   fAngleAccel;
     static  float   fTheta, fTheta1;
     
-    if ((nTimer--) == 0)
+    nTimer--;
+    if (nTimer == 0)
     {
         switch (nState)
         {
@@ -397,7 +398,7 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
                 
                 gnStatus_IMU = _READY;                          // Indicate IMU module has valid output.
                 nState = 6;
-                nTimer = 1;                     
+                nTimer = 1;                           
             break;
             
             default:
@@ -408,18 +409,22 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
     }
 }
 
-// --- Primary state-space feedback control coefficients ---
-    #define     _FR_DEFAULT         -0.09375    // In radian.
+// --- Primary feedback control loop coefficients ---
+// These constants need to be tuned to fit the physical characteristics of the robot.
+    #define     _FR_DEFAULT         -0.000    // Default set tilt angle, in radian.
     
 // Gain of 10, quarter-step mode.
-    #define     _FP_DEFAULT_4        -64.00   
-    #define     _FI_DEFAULT_4        -0.500   // For deltat = 1 msec
-    #define     _FCW_DEFAULT_4       -0.500    // For deltat = 1 msec
+    #define     _FP_DEFAULT_4        -64.00   // Proportional gain, for delta1 = 1 msec.
+    #define     _FI_DEFAULT_4        -0.500   // Integral gain, for deltat = 1 msec
+    #define     _FCW_DEFAULT_4       -0.500    // Differential gain, for deltat = 1 msec
+
+// --- Secondary feedback control loop coefficients ---
     
     #define     _FP2_MOVE_DEFAULT_4   4
     #define     _FD2_MOVE_DEFAULT_4   0
     #define     _FI2_MOVE_DEFAULT_4   1
  
+
     #define     _STEPPER_MOTOR_COEFFICIENT_2    1  // For half-step mode.
     #define     _STEPPER_MOTOR_COEFFICIENT_4    2  // For quarter-step mode.
 
@@ -428,18 +433,13 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
     #define     _MOTOR_DRIVER_TURN_OFFSET_MAX  85
     #define     _MOTOR_DRIVER_TURN_OFFSET_MIN  -85
 
-    
-    #define     _FP_INTERVAL        2.00               // +2.00, floating point format.    
-    #define     _FI_INTERVAL        0.0625             // +0.0625, floating point format.    
-    #define     _FCW_INTERVAL       0.125             // +0.125, floating point format.
-    #define     _R_INTERVAL         0.00390625         // +0.0078125, floating point format. 
- 
+     
 ///
 /// Process name	: Robot_Balance
 ///
 /// Author          : Fabian Kung
 ///
-/// Last modified	: 26 Oct 2019
+/// Last modified	: 29 Oct 2019
 ///
 /// Code version	: 0.75
 ///
@@ -514,7 +514,9 @@ void Robot_Balance(void)
     static float   fEOld;
     static float   dfE;
  
-    if ((nTimer--) == 0)
+
+    nTimer--;                   // Decrement timer.
+    if (nTimer == 0)
     {
         switch (nState)
         {
@@ -540,6 +542,7 @@ void Robot_Balance(void)
                 break;
 
             case 1: // State 1 - Check if machine is ready before proceeding.
+                       
                 if (gnRobotBalance == _DISABLE)         // Check if the balancing module is enable or not.
                 {                                       // Do not run balancing module if it is disabled.
                     gobjDriverA4988.nSpeed1 = 0;        // Turn off both left and right stepper motors.
@@ -550,16 +553,26 @@ void Robot_Balance(void)
                 }
                 else
                 {
+                //--- Test codes ---
+                if (_RB2 == 0)
+                {
+                    _RB2 = 1;
+                }
+                else
+                {
+                    _RB2 = 0;
+                }     
+                // --- End of test codes ---                     
                     nState = 2;
                     nTimer = 1;                    
                 }
                 break;
 
-            case 2: // State 2 - Check for robot's orientation and calculate output for tilt angle error.
+            case 2: // State 2 - Check for robot's orientation and calculate output for tilt angle error.  
                 gfE = (gfR + gfRoffset) - gfTheta_MPU6050;
                 fC = gfP*gfE;                           // Proportional term. 
                 nState = 3;
-                nTimer = 1;                  
+                nTimer = 1;                        
                 break;
 
             case 3: // State 3 - Compute the difference term.  
@@ -660,7 +673,7 @@ void Robot_Balance(void)
 ///
 /// Author          : Fabian Kung
 ///
-/// Last modified	: 27 Aug 2019
+/// Last modified	: 30 Oct 2019
 ///
 /// Code version	: 0.82
 ///
@@ -717,7 +730,8 @@ void Robot_MoveLinear(void)
     static int  nCount = 0;
     int         nTemp;
     
-    if ((nTimer--) == 0)
+    nTimer--;                                       // Decrement timer.
+    if (nTimer == 0)            
     {
         switch (nState)
         {
@@ -885,8 +899,8 @@ void Robot_MoveLinear(void)
 }
 
 
- 
-void Test1(void)
+// High level process, coordinate all other routines in the robot.
+void Robot_HighLevelProcess(void)
 {
     static int  nState = 0;
     static int  nTimer = 1;
@@ -895,32 +909,42 @@ void Test1(void)
     static  int  nSign = 0;
     static  int  nAngle;
     
-    if ((nTimer--) == 0)
+    nTimer--;               // Decrement timer.
+    if (nTimer == 0)
     {
         switch (nState)
         {
             case 0: // State 0 - Initialization.
-                PIN_HC_05_RESET = 1;                    // Deasert reset pin for bluetooth module. 
-                PIN_PSW = _OFF_ANALOG_POWER;            // Turn off Analog Power Switch.
+                PIN_HC_05_RESET = 1;                    // Deasert reset pin for Bluetooth module. 
+                                                        // Note: Here we assume the HC-05 Bluetooth module EN pin 
+                                                        // is active low. Certain modules has active high EN pin,
+                                                        // so you need to find out the correct polarity.
+                //PIN_PSW = _OFF_ANALOG_POWER;            // Turn off Analog Power Switch.
                 gobjDriverA4988.unEn4988 = 1;           // Enable the stepper motor driver.
-                PIN_MS1 = _STEPPER_MOTOR_QUARTER_STEP;  // Set stepper motor driver IC to quarter-step mode.
+                //PIN_MS1 = _STEPPER_MOTOR_QUARTER_STEP;  // Set stepper motor driver IC to quarter-step mode.
                 gnControlCoefficient = _STEPPER_MOTOR_COEFFICIENT_4*10;
-                gnRobotBalance = _DISABLE;              // Disable balancing routines.
-                PIN_PSW = _ON_ANALOG_POWER; 
+                gnRobotBalance = _DISABLE;              // Disable balancing routines.                
                 nState = 1;
-                //nState = 100;
+                //nState = 105;
                 nTimer = 1000*__NUM_SYSTEMTICK_MSEC;
             break;
 
-            case 1: // State 1 - Reset HC-05 Bluetooth module if it is attached.
-                PIN_HC_05_RESET = 0;                     // Reset bluetooth module.
+            case 1: // State 1 - Optional step, reset HC-05 Bluetooth module if it is attached.  Sometimes the HC-05
+                    // Bluetooth module cannot boot up properly due to rise time of the supply voltage too slow.
+                PIN_HC_05_RESET = 0;                     // Reset Bluetooth module.
                 nState = 2;
                 //nState = 20;
                 nTimer = 10*__NUM_SYSTEMTICK_MSEC;
                 break;
             
-            case 2: // State 2 - Wait until robot is upright.
+            case 2: // State 2 - Optional step, deaasert HC-05 reset.
                 PIN_HC_05_RESET = 1;
+                nState = 3;
+                nTimer = 100*__NUM_SYSTEMTICK_MSEC;
+                break;
+                
+            case 3: // State 3 - Wait until robot is upright.
+                
                 if ((gnTiltOrient_IMU == _ROR_UPRIGHT)&&(gnStatus_IMU == _READY))
                 // Check if robot is upright, with IMU and wheel encoder outputs are valid.
                 {
@@ -928,35 +952,34 @@ void Test1(void)
                     gnOmegaWSet = 0;                                            // Present linear velocity and
                     gnlDistanceSet = 0;                                         // distance settings.
                     gnRobotBalance = _ENABLE;                                   // Enable balancing routines. 
-                     
-                    nState = 3;
+                    //PIN_PSW = _ON_ANALOG_POWER;  
+                    nState = 4;
                     nTimer = 1;                     
                 }
                 else
                 {
-                    nState = 2;
+                    nState = 3;
                     nTimer = 1; 
                 }                                   
                 break;
             
-            case 3: // State 3 - Check for topple condition.
+            case 4: // State 4 - Check for topple condition.
                 if ((gnTiltOrient_IMU ==  _ROR_TOPPLE_FRONT) || (gnTiltOrient_IMU ==  _ROR_TOPPLE_BACK))
                 {
-                    //PIN_PSW = _OFF_ANALOG_POWER; 
                     nState = 10;
                     nTimer = 1; 
                 }
                 else    // Robot is upright, proceed to other operating mode tasks.
                 {                   
-                    nState = 4;
+                    nState = 5;
                     nTimer = 1; 
                 }                             
                 break;
                 
-            case 4: // State 4 - Read current tilt angle, convert to ASCII digits.
-                nAngle = gnTheta_Deg_MPU6050;
-                if (nAngle < 0)
-                {
+            case 5: // State 5 - Send back tilt angle reading to external monitor software. 
+                nAngle = gnTheta_Deg_MPU6050;           // Read tilt angle.
+                if (nAngle < 0)                         // Steps to convert signed integer value
+                {                                       // to sign BCD (Binary coded decimal).
                     nAngle = -nAngle;
                     nSign = -1;
                 }
@@ -964,22 +987,22 @@ void Test1(void)
                 {
                     nSign = 0;
                 }
-                nTens = 0;                  // Reset tenth digit counter.
-                nState = 5;
+                nTens = 0;
+                nState = 6;
                 nTimer = 1;                
                 break;               
                 
-            case 5: // State 5 - Continue with conversion.
+            case 6: // State 6 - Continue with signed integer to signed BCD conversion.
                 while (nAngle > 9)
                 {
                     nAngle = nAngle - 10;
                     nTens++;
                 }
-                nState = 6;
+                nState = 7;
                 nTimer = 1;  
                 break;
                 
-            case 6: // State 6 - Transmit current tilt angle via UART1.
+            case 7: // State 7 - Transmit signed BCD value of tilt angle via UART1 port.
                 if (nSign < 0)
                 {
                     gbytTXbuffer[0] = '-';
@@ -991,45 +1014,22 @@ void Test1(void)
                 
                 gbytTXbuffer[1] = nTens + 48;	// Convert tenth digit to ASCII and load data.
 		   	    gbytTXbuffer[2] = nAngle + 48;  // Convert unit digit to ASCII and load data.
-                gbytTXbuffer[3] = '\n';
-		   	    gbytTXbuflen = 4;		// Set TX frame length.
-		  	    gSCIstatus.bTXRDY = 1;	// Initiate TX.                
-                nState = 7;
-                nTimer = 1;                  
-                break;
+                gbytTXbuffer[3] = '\n';         // Add newline character.
+		   	    gbytTXbuflen = 4;               // Set TX frame length.
+		  	    gSCIstatus.bTXRDY = 1;          // Initiate TX.                
+                nState = 4;
+                nTimer = 50*__NUM_SYSTEMTICK_MSEC;  // Repeat this 20 times per second.                   
+                break;                
                 
-            case 7: // State 7 -
-                if (gbytRXbufptr > 0)
-                {
-                    if (gbytRXbuffer[0] == '1')
-                    {
-                        gfI = gfI + _FI_INTERVAL;  
-                    }
-                    else if (gbytRXbuffer[0] == '2')
-                    {
-                        gfI = gfI - _FI_INTERVAL; 
-                    }
-                    gbytRXbufptr = 0;
-                    gSCIstatus.bRXRDY = 0;	// Reset valid data flag.
-                }
-                nState = 8;
-                nTimer = 1;
-                break;
-                
-            case 8: // State 8 -
-                nState = 2;
-                nTimer = 50*__NUM_SYSTEMTICK_MSEC;                 
-                break;
-                
-            case 10: // State 10 - Disable all activities. Robot toppled.
-                     // When the robot topples, we need to shut down all motors to avoid damaging the motor's gearbox.
+            case 10: // State 10 - Disable balancing routine, robot toppled.
+                     // When the robot topples, we need to shut down all motors to avoid damaging the motor driver.
                 gnRobotBalance = _DISABLE;                          // Set the robot to a known state:
                 nState = 2;
                 nTimer = 1;                 
             break;
             
             case 100: // State 100 - Test mode.
-                PIN_PSW = _ON_ANALOG_POWER; 
+                //PIN_PSW = _ON_ANALOG_POWER; 
                 gobjDriverA4988.unEn4988 = 1;       // Enable the stepper motor driver.
                 nState = 101;
                 nTimer = 1000*__NUM_SYSTEMTICK_MSEC;
@@ -1064,6 +1064,14 @@ void Test1(void)
                 nTimer = 100*__NUM_SYSTEMTICK_MSEC;                       
             break;            
             
+            case 105: // State 105 - Test mode, test UART1.
+                gbytTXbuffer[0] = '1';	// Load data.
+		   	    gbytTXbuflen = 1;		// Set TX frame length.
+		  	    gSCIstatus.bTXRDY = 1;	// Initiate TX.    
+                nState = 105;
+                nTimer = 100*__NUM_SYSTEMTICK_MSEC;  
+                break;
+                
             default:
                 nState = 0;
                 nTimer = 1; 
