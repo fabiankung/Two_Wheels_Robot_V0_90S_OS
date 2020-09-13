@@ -1,5 +1,5 @@
 // Author			: Fabian Kung
-// Date				: 29 Oct 2019
+// Date				: 13 Sep 2020
 // Filename			: dsPIC33E_BoardSupport.h
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -108,7 +108,7 @@ void I2CDriver(void);
 void A4988StepperMotorDriver(void);
 
 // --- GLOBAL/EXTERNAL VARIABLES DECLARATION ---
-extern  int gnRunTask;
+extern  volatile int gnRunTask;
 extern  SCI_STATUS gSCIstatus;				// Status for UART and RF serial communication interface.
 
 // Data buffer and address pointers for wired serial communications (UART1).
