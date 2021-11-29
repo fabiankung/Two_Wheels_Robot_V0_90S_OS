@@ -410,21 +410,18 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
 }
 
 // --- Primary feedback control loop coefficients ---
-// These constants need to be tuned to fit the physical characteristics of the robot.
-    #define     _FR_DEFAULT         -0.000    // Default set tilt angle, in radian.
+    #define     _FR_DEFAULT         -0.09375    // In radian.
     
 // Gain of 10, quarter-step mode.
-    #define     _FP_DEFAULT_4        -64.00   // Proportional gain, for delta1 = 1 msec.
-    #define     _FI_DEFAULT_4        -0.500   // Integral gain, for deltat = 1 msec
-    #define     _FCW_DEFAULT_4       -0.500    // Differential gain, for deltat = 1 msec
-
-// --- Secondary feedback control loop coefficients ---
+    #define     _FP_DEFAULT_4        -64.00   
+    #define     _FI_DEFAULT_4        -0.500   // For deltat = 1 msec
+    #define     _FCW_DEFAULT_4       -0.500    // For deltat = 1 msec
     
-    #define     _FP2_MOVE_DEFAULT_4   4
+ // --- Secondary feedback control loop coefficients ---
+    #define     _FP2_MOVE_DEFAULT_4   4             // Coefficients to move at constant speed.
     #define     _FD2_MOVE_DEFAULT_4   0
     #define     _FI2_MOVE_DEFAULT_4   1
  
-
     #define     _STEPPER_MOTOR_COEFFICIENT_2    1  // For half-step mode.
     #define     _STEPPER_MOTOR_COEFFICIENT_4    2  // For quarter-step mode.
 
@@ -432,8 +429,10 @@ int     gnRobotBalance = _DISABLE;                  // 0 = Disable/off balance m
     #define     _MOTOR_DRIVER_MIN_SPEED    -800           // for stepper motor driver.
     #define     _MOTOR_DRIVER_TURN_OFFSET_MAX  85
     #define     _MOTOR_DRIVER_TURN_OFFSET_MIN  -85
-
-     
+    
+    #define     _FP2_TURN_DEFAULT   1               // Coefficients for turning.
+    #define     _FD2_TURN_DEFAULT   4   
+ 
 ///
 /// Process name	: Robot_Balance
 ///
@@ -682,7 +681,7 @@ void Robot_Balance(void)
 /// Processor/System Resource
 /// PIN             :  None
 ///
-/// MODULE          :  Proce_Balance(), internal.
+/// MODULE          :  Robot_Balance(), internal.
 ///
 /// DRIVER          :  None
 ///
@@ -897,9 +896,166 @@ void Robot_MoveLinear(void)
         }
     }
 }
+///
+/// Process name	: Robot_Turn
+///
+/// Author          : Fabian Kung
+///
+/// Last modified	: 29 Nov 2021
+///
+/// Code version	: 0.70
+///
+/// Processor		: dsPIC33EP256MU80X family.
+///
+/// Processor/System Resource
+/// PIN             :  None
+///
+/// MODULE          :  Robot_Balance(), internal.
+///
+/// DRIVER          :  None
+///
+/// RTOS            :  Ver 1 or above, round-robin scheduling.
+///
+/// Global variables	:  gnHeadingSet
+///                        gnHeadingDeltaSet
+///                        gnCLoffset
+///                        gnCRoffset
+///                        gnHeading
+///
+/// Description	: This process controls the direction of the robot, whether it is
+///               standing stationary or moving, turning.  Basically it monitors two
+///               global parameters, 'gnHeading' and 'gnHeadingSet'.  gnHeading is 
+///               the current direction of the robot, being the difference between 
+///               distance traveled by left and right wheels respectively.  Whereas
+///               gnHeadingSet it the required direction.  Thus if there is a discrepancy
+///               between gnHeading and gnHeadingSet, a simple discrete PD feedback
+///               is used to determine the differential offset voltage required for the left and
+///               right wheel motor driver circuit, to nudge the robot into the correct
+///               direction.  
+///               Sampling rate - At present the sampling rate for this feedback control
+///               is 10 msec, or 10x slower than the balancing feedback control routines.
+/// 
+/// Example of usage:
+///               If gnHeadingSet = 0, then the robot will always try to face forward
+///               direction, whether standing still or moving forward or backward.  If
+///               during moving forward the direction changes slightly (due to slippage)
+///               or difference in frictional force on the wheels, a small differential
+///               offset voltage will be added to the motor driver servo amplifier, in 
+///               the form of gnCLoffset and gnCRoffset.
+///               If gnHeadingSet > 0, then the robot will turn left until gnHeadingSet
+///               is close to gnHeading. 
+///               If gnHeadingSet < 0, then the robot will turn right until gnHeadingSet
+///               is close to gnHeading. 
 
+void Robot_Turn(void)
+{
+ static int  nState = 0;
+ static int  nTimer = 1;       
+ static int nE1;		
+ static int nE2;
+ int    nTurn;
+ 
+    nTimer--;                                       // Decrement timer.
+    if (nTimer == 0)            
+    {
+        switch (nState)
+        {        
+            case 0: // State 0 - Initialization.
+                gnKp_Turn = _FP2_TURN_DEFAULT;                              // Default values for PD coefficients.
+                gnKd_Turn = _FD2_TURN_DEFAULT;                              // 
+                gnHeadingSet = 0;                                           // Initialize all global and static variables associated
+                                                                            // with this process.
+                nE1 = 0;
+                nE2 = 0;
+                nState = 1;
+                nTimer = 500*__NUM_SYSTEMTICK_MSEC;                
+            break;
+
+            case 1: // State 1 - Check if machine machine ready before proceeding.
+                if (gnRobotBalance == _DISABLE)                             // Check if the balancing module is enable or not.
+                {                                                           // Do not run balancing module.
+                    nState = 10;
+                    nTimer = 10*__NUM_SYSTEMTICK_MSEC;                
+                }
+                else
+                {
+                    nState = 2;
+                    nTimer = 1;
+                }
+            break;
+
+            case 2: // State 2 - Turn feedback loop, sequence 1.  The loop interval is 10 msec.
+                nE1 = gnHeadingSet - gnHeading;                         // Compute error in current heading.
+                nE2 = nE1 - nE2;                                        // Compute difference of current and previous error.
+                nState = 3;
+                nTimer = 1;                
+                break;
+                
+            case 3: // State 3 - Turn feedback loop, 2nd sequence.
+                nTurn = gnKp_Turn*nE1 + gnKd_Turn*nE2;                  // Compute the offset differential voltage.
+                nTurn = nTurn/2;
+                //nTurn = gnKp_Turn*nE1; 
+                if (nTurn > 0)                                          // Limit the offset differential
+                {                                                       // voltage magnitude.
+                    if (nTurn > _MOTOR_DRIVER_TURN_OFFSET_MAX)
+                    {
+                        nTurn = _MOTOR_DRIVER_TURN_OFFSET_MAX;
+                    }
+                }
+                else
+                {
+                    if (nTurn < _MOTOR_DRIVER_TURN_OFFSET_MIN)
+                    {
+                        nTurn = _MOTOR_DRIVER_TURN_OFFSET_MIN;
+                    }                    
+                }
+                
+                gnCLoffset = nTurn;                                     // Add offset differential speed.
+                gnCRoffset = -nTurn;                                    // to left and right wheel motor drivers.                
+                nE2 = nE1;                                              // Store current error value.
+                nState = 1;
+                nTimer = 10*__NUM_SYSTEMTICK_MSEC;                                
+                break;
+                
+            case 10: // State 10 - Balancing operation is disabled, continue to monitor the global variable 
+                     // gnRobotBalance until balancing routine is enabled again.
+                if (gnRobotBalance == _DISABLE)
+                {
+                    nState = 10;
+                    nTimer = 10;                             
+                }
+                else
+                {					
+                    nE1 = 0;
+                    nE2 = 0;
+                    gnHeadingSet = 0;
+                    gnHeading = gnHeadingSet;
+                    nState = 2;
+                    nTimer = 10;                             
+                }
+            break;
+
+            default:
+                nState = 0;
+                nTimer = 1;         
+            break;
+        }
+    }
+}
 
 // High level process, coordinate all other routines in the robot.
+// This process transmits the tilt angle of the robot, in string format at 115.2 kbps to
+// (8 bits data, 1 start, 1 stop bit, no parity, no hand-shaking) via UART1. 
+// You can connect UART1 to a USB-to-Serial converter, or HC-05 Bluetooth
+// module (need to reconfigure HC-05 from the default baud rate of 9600 bps to 115200 bps).
+// Use Arduino IDE Serial Monitor or another Serial Terminal program to monitor the output.
+// You can also control the robot by sending the following characters:
+// 'l' = Turn left a bit.
+// 'r' = Turn right a bit.
+// 'f' = Move forward
+// 't' = Move backward
+// 'x' = Stop moving.
+//
 void Robot_HighLevelProcess(void)
 {
     static int  nState = 0;
@@ -909,19 +1065,21 @@ void Robot_HighLevelProcess(void)
     static  int  nSign = 0;
     static  int  nAngle;
     
+    static  BYTE bytData;
+    
     nTimer--;               // Decrement timer.
     if (nTimer == 0)
     {
         switch (nState)
         {
             case 0: // State 0 - Initialization.
-                PIN_HC_05_RESET = 1;                    // Deasert reset pin for Bluetooth module. 
+                PIN_HC_05_RESET = 1;                    // De-asert reset pin for Bluetooth module. 
                                                         // Note: Here we assume the HC-05 Bluetooth module EN pin 
                                                         // is active low. Certain modules has active high EN pin,
                                                         // so you need to find out the correct polarity.
-                //PIN_PSW = _OFF_ANALOG_POWER;            // Turn off Analog Power Switch.
+                PIN_PSW = _OFF_ANALOG_POWER;            // Turn off Analog Power Switch.
                 gobjDriverA4988.unEn4988 = 1;           // Enable the stepper motor driver.
-                //PIN_MS1 = _STEPPER_MOTOR_QUARTER_STEP;  // Set stepper motor driver IC to quarter-step mode.
+                PIN_MS1 = _STEPPER_MOTOR_QUARTER_STEP;  // Set stepper motor driver IC to quarter-step mode.
                 gnControlCoefficient = _STEPPER_MOTOR_COEFFICIENT_4*10;
                 gnRobotBalance = _DISABLE;              // Disable balancing routines.                
                 nState = 1;
@@ -933,18 +1091,16 @@ void Robot_HighLevelProcess(void)
                     // Bluetooth module cannot boot up properly due to rise time of the supply voltage too slow.
                 PIN_HC_05_RESET = 0;                     // Reset Bluetooth module.
                 nState = 2;
-                //nState = 20;
                 nTimer = 10*__NUM_SYSTEMTICK_MSEC;
                 break;
             
-            case 2: // State 2 - Optional step, deaasert HC-05 reset.
+            case 2: // State 2 - Optional step, de-assert HC-05 reset.
                 PIN_HC_05_RESET = 1;
                 nState = 3;
                 nTimer = 100*__NUM_SYSTEMTICK_MSEC;
                 break;
                 
-            case 3: // State 3 - Wait until robot is upright.
-                
+            case 3: // State 3 - Wait until robot is upright.              
                 if ((gnTiltOrient_IMU == _ROR_UPRIGHT)&&(gnStatus_IMU == _READY))
                 // Check if robot is upright, with IMU and wheel encoder outputs are valid.
                 {
@@ -952,7 +1108,7 @@ void Robot_HighLevelProcess(void)
                     gnOmegaWSet = 0;                                            // Present linear velocity and
                     gnlDistanceSet = 0;                                         // distance settings.
                     gnRobotBalance = _ENABLE;                                   // Enable balancing routines. 
-                    //PIN_PSW = _ON_ANALOG_POWER;  
+                    PIN_PSW = _ON_ANALOG_POWER;  
                     nState = 4;
                     nTimer = 1;                     
                 }
@@ -1017,9 +1173,50 @@ void Robot_HighLevelProcess(void)
                 gbytTXbuffer[3] = '\n';         // Add newline character.
 		   	    gbytTXbuflen = 4;               // Set TX frame length.
 		  	    gSCIstatus.bTXRDY = 1;          // Initiate TX.                
-                nState = 4;
-                nTimer = 50*__NUM_SYSTEMTICK_MSEC;  // Repeat this 20 times per second.                   
+                nState = 8;
+                nTimer = 1;                  
                 break;                
+                
+            case 8: // State 8 - Check for incoming byte from UART1, and process the byte.
+                if (gSCIstatus.bRXRDY == 1)	// Check if UART receive any data.
+                {
+                    if (gSCIstatus.bRXOVF == 0) // Make sure no overflow error.
+                    {
+                        bytData = gbytRXbuffer[0];	// Get 1 byte and ignore all others.
+                        if (bytData == 'l')
+                        {
+                            gnHeadingSet = gnHeadingSet-100;      // Turn left a bit.
+                        }
+                        else if (bytData == 'r')
+                        {
+                            gnHeadingSet = gnHeadingSet+100;     // Turn right a bit.
+                        }
+                        else if (bytData == 'f')                // Move forward.
+                        {
+                            gnOmegaWSet = 25;
+                        }     
+                        else if (bytData == 't')                // Move backward.
+                        {
+                            gnOmegaWSet = -25;                  // Move backward.
+                        }  
+                        else
+                        {
+                            gnOmegaWSet = 0;                    // Stop.
+                        }
+                    }
+                    else
+                    {
+                        gSCIstatus.bRXOVF = 0; 	// Reset overflow error flag.
+                    }
+                    gSCIstatus.bRXRDY = 0;	// Reset valid data flag.
+                    gbytRXbufptr = 0; 		// Reset pointer.
+                }         
+                //else
+                //{
+                    nState = 4;
+                    nTimer = 49*__NUM_SYSTEMTICK_MSEC;  // Repeat this roughly 20 times per second.
+                //}
+                break;
                 
             case 10: // State 10 - Disable balancing routine, robot toppled.
                      // When the robot topples, we need to shut down all motors to avoid damaging the motor driver.
@@ -1029,7 +1226,7 @@ void Robot_HighLevelProcess(void)
             break;
             
             case 100: // State 100 - Test mode.
-                //PIN_PSW = _ON_ANALOG_POWER; 
+                PIN_PSW = _ON_ANALOG_POWER; 
                 gobjDriverA4988.unEn4988 = 1;       // Enable the stepper motor driver.
                 nState = 101;
                 nTimer = 1000*__NUM_SYSTEMTICK_MSEC;

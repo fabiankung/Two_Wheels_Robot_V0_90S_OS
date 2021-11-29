@@ -2,7 +2,7 @@
 //
 // Filename         : Main.c
 // Author(s)		: Fabian Kung
-// Last modified	: 13 Sep 2020
+// Last modified	: 29 Nov 2020
 // Release Version	: 0.901 (This refers to OS version or release)
 // Description		: Main C file for the RTOS.
 //                    Uses round-robin scheduling algorithm to schedule tasks.
@@ -58,6 +58,7 @@ int main(void)
             Robot_Sensor_MPU6050();            
             Robot_Balance();
             Robot_MoveLinear();
+            Robot_Turn();
             Robot_HighLevelProcess();
             gnRunTask = 0;                 
         }
