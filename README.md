@@ -5,8 +5,8 @@ You can connect the robot to a computer or smartphone using USB-to-serial conver
 Any serial terminal program, such as Arduino IDE Serial Monitor, putty etc can be used. Once connected, the robot will sends its current tilt angle in string
 format every 20 msec to the computer or smartphone.
 You can also control the robot by sending the following characters:
-'l' = Turn left a bit.
-'r' = Turn right a bit.
-'f' = Move forward
-'t' = Move backward
-'x' = Stop moving.
+* 'l' = Turn left a bit.
+* 'r' = Turn right a bit.
+* 'f' = Move forward
+* 't' = Move backward
+* 'x' = Stop moving.
